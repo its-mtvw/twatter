@@ -138,6 +138,17 @@
           </q-item-section>
         </q-item>
       </q-list>
+      <q-list seperator bordered padding>
+        <q-item-label overline class="text-grey">Who to Follow</q-item-label>
+        <q-item v-for="user in users" :key="user.id">
+          <q-item-section>
+            <q-item-label>{{ user.username }}</q-item-label>
+          </q-item-section>
+        </q-item>
+      </q-list>
+
+      <!-- Debugging output -->
+      <pre>{{ users }}</pre>
     </q-drawer>
 
     <q-page-container>
@@ -152,6 +163,7 @@ import { firebaseApp } from "boot/firebase";
 export default {
   data() {
     return {
+      users: [],
       leftDrawerOpen: false,
       currentUser: null,
     };
@@ -167,6 +179,7 @@ export default {
       try {
         await signOut(auth);
         this.currentUser = null;
+        localStorage.removeItem("user");
       } catch (error) {
         console.error("Error signing out: ", error);
       }

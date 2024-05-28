@@ -61,6 +61,8 @@ export default {
       try {
         await signInWithEmailAndPassword(firebaseAuth, email, this.password);
         this.message = "User logged in successfully!";
+        localStorage.setItem("user", JSON.stringify({ user: this.username }));
+        this.$router.push("/");
       } catch (error) {
         this.message = "Log in error: " + error.message;
       }
