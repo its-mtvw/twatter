@@ -34,14 +34,17 @@
     <div v-for="user in users" :key="user.id">
       <p>{{ user.username }}</p>
       <q-btn
-        @click="followUser(user)"
+        @click="toggleFollow(user)"
         color="primary"
         icon="person_add"
         size="sm"
         flat
         round
-      />
+      >
+        {{ isFollowing(user) ? "Unfollow" : "Follow" }}
+      </q-btn>
     </div>
+
     <q-separator size="10px" color="grey-2" />
     <q-list seperator>
       <transition-group
@@ -109,7 +112,6 @@
 import { ref, onMounted } from "vue";
 import {
   query,
-  where,
   collection,
   doc,
   addDoc,
@@ -121,32 +123,37 @@ import {
   orderBy,
   arrayUnion,
   arrayRemove,
+  setDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "boot/firebase";
 import { formatDistanceToNow } from "date-fns";
 import { useQuasar } from "quasar";
-let storedUser = localStorage.getItem("user");
-let parsedUser = storedUser
-  ? JSON.parse(storedUser)
-  : { user: "defaultUsername" };
-const username = ref(parsedUser.user);
+
+const $q = useQuasar();
+const currentUser = ref(JSON.parse(localStorage.getItem("user")) ?? null);
+const username = ref(currentUser.value?.user ?? "defaultUsername");
 const newTwattContent = ref("");
 const twatts = ref([]);
+const users = ref([]);
+const following = ref([]); // To keep track of followed users
 
 const relativeDate = (value) => {
   return formatDistanceToNow(value, { addSuffix: true });
 };
 
 const addNewTwatt = async () => {
-  let storedUser = JSON.parse(localStorage.getItem("user"));
-  if (!storedUser) {
-    alert("You need to be logged in to twatt");
+  if (!currentUser.value || !currentUser.value.user) {
+    $q.notify({
+      type: "negative",
+      message: "You need to be logged in to twatt",
+    });
     return;
   }
   let newTwatt = {
     content: newTwattContent.value,
     date: Date.now(),
-    user: storedUser.user, // store the username of the user who posted the tweet
+    user: currentUser.value.user, // store the username of the user who posted the tweet
     likes: [],
   };
   const twattsCollection = collection(db, "twatts");
@@ -155,8 +162,7 @@ const addNewTwatt = async () => {
 };
 
 const deleteTwatt = async (twatt) => {
-  let storedUser = JSON.parse(localStorage.getItem("user"));
-  if (twatt.user === storedUser.user) {
+  if (twatt.user === currentUser.value.user) {
     try {
       const twattDoc = doc(db, "twatts", twatt.id);
       await deleteDoc(twattDoc);
@@ -166,9 +172,13 @@ const deleteTwatt = async (twatt) => {
       console.error("Error deleting twatt:", error);
     }
   } else {
-    alert("You can only delete your own twatts");
+    $q.notify({
+      type: "negative",
+      message: "You can only delete your own twatts",
+    });
   }
 };
+
 const likeTwatt = async (twatt) => {
   const twattDoc = doc(db, "twatts", twatt.id);
   if (Array.isArray(twatt.likes)) {
@@ -185,34 +195,111 @@ const likeTwatt = async (twatt) => {
     twatt.likes = updatedTwatt.data().likes;
   }
 };
-const followUser = async (userId) => {
+
+const fetchUsers = async () => {
+  const usersCollection = collection(db, "users");
+  const usersSnapshot = await getDocs(usersCollection);
+  users.value = usersSnapshot.docs.map((doc) => ({
+    id: doc.id,
+    username: doc.data().user, // Assuming 'username' field contains UID
+  }));
+};
+
+const fetchFollowing = async () => {
+  if (!currentUser.value.user || !currentUser.value.uid) {
+    console.error("No current user or UID found.");
+    return;
+  }
+
   try {
-    if (currentUser) {
-      const followerDocRef = doc(
-        collection(db, "followers", userId, "followers"),
-        currentUser.uid
-      );
-      const followingDocRef = doc(
-        collection(db, "following", currentUser.uid, "following"),
-        userId
-      );
+    const followingCollection = collection(
+      db,
+      "following",
+      currentUser.value.uid,
+      "following"
+    );
+    const followingSnapshot = await getDocs(followingCollection);
+    following.value = followingSnapshot.docs.map((doc) => doc.data().userId);
+  } catch (error) {
+    console.error("Error fetching following data: ", error);
+  }
+};
 
-      await setDoc(followerDocRef, {
-        userId: currentUser.uid,
-        followedAt: serverTimestamp(),
-      });
+const isFollowing = (user) => {
+  return following.value.includes(user.id);
+};
 
-      await setDoc(followingDocRef, {
-        userId: userId,
-        followedAt: serverTimestamp(),
-      });
+const toggleFollow = async (user) => {
+  if (isFollowing(user)) {
+    await unfollowUser(user);
+  } else {
+    await followUser(user);
+  }
+};
 
-      reload.value++;
-    }
+const followUser = async (user) => {
+  if (!currentUser.value || !currentUser.value.uid) {
+    $q.notify({
+      type: "negative",
+      message: "You need to be logged in to follow users",
+    });
+    return;
+  }
+
+  try {
+    const followerDocRef = doc(
+      collection(db, "followers", user.id, "followers"),
+      currentUser.value.uid
+    );
+    const followingDocRef = doc(
+      collection(db, "following", currentUser.value.uid, "following"),
+      user.id
+    );
+
+    await setDoc(followerDocRef, {
+      userId: currentUser.value.uid,
+      followedAt: serverTimestamp(),
+    });
+
+    await setDoc(followingDocRef, {
+      userId: user.id,
+      followedAt: serverTimestamp(),
+    });
+
+    following.value.push(user.id);
   } catch (error) {
     console.error("Error following user: ", error);
   }
 };
+
+const unfollowUser = async (user) => {
+  if (!currentUser.value || !currentUser.value.uid) {
+    $q.notify({
+      type: "negative",
+      message: "You need to be logged in to unfollow users",
+    });
+    return;
+  }
+
+  try {
+    const followerDocRef = doc(
+      collection(db, "followers", user.id, "followers"),
+      currentUser.value.uid
+    );
+    const followingDocRef = doc(
+      collection(db, "following", currentUser.value.uid, "following"),
+      user.id
+    );
+
+    await deleteDoc(followerDocRef);
+    await deleteDoc(followingDocRef);
+
+    following.value = following.value.filter((id) => id !== user.id);
+  } catch (error) {
+    console.error("Error unfollowing user: ", error);
+  }
+};
+
 onMounted(() => {
   const twattsCollection = collection(db, "twatts");
   const orderedQuery = query(twattsCollection, orderBy("date", "desc"));
@@ -223,8 +310,16 @@ onMounted(() => {
       likes: doc.data().likes,
     }));
   });
+
+  if (currentUser.value) {
+    fetchUsers();
+    fetchFollowing();
+  } else {
+    console.error("No current user found.");
+  }
 });
 </script>
+
 <style>
 .twatt-content {
   white-space: pre-line;

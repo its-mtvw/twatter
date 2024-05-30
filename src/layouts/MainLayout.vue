@@ -53,6 +53,14 @@
 
           <q-item-section class="text-h6">Signup</q-item-section>
         </q-item>
+        <q-item to="/admin" clickable v-ripple exact>
+          <q-item-section avatar>
+            <q-icon color="primary" name="login" size="md" />
+          </q-item-section>
+
+          <q-item-section class="text-h6">Admin Page</q-item-section>
+        </q-item>
+        
         <q-item v-if="currentUser" clickable v-ripple @click="logout">
           <q-item-section avatar>
             <q-icon color="primary" name="logout" size="md" />
@@ -138,17 +146,6 @@
           </q-item-section>
         </q-item>
       </q-list>
-      <q-list seperator bordered padding>
-        <q-item-label overline class="text-grey">Who to Follow</q-item-label>
-        <q-item v-for="user in users" :key="user.id">
-          <q-item-section>
-            <q-item-label>{{ user.username }}</q-item-label>
-          </q-item-section>
-        </q-item>
-      </q-list>
-
-      <!-- Debugging output -->
-      <pre>{{ users }}</pre>
     </q-drawer>
 
     <q-page-container>
