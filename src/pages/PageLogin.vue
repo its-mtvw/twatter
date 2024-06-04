@@ -12,8 +12,8 @@
         clearable
         filled
         color="blue-6"
-        v-model="username"
-        label="UserName"
+        v-model="email"
+        label="Email"
         style="width: 400px"
       />
       <q-input
@@ -32,39 +32,31 @@
 </template>
 
 <script>
-import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
-import { firebaseApp, db } from "boot/firebase";
-import { collection, doc, getDoc } from "firebase/firestore";
+import axios from "axios";
+const axios_instance = axios.create({
+  baseURL: "http://localhost:3000",
+});
 
 export default {
   data() {
     return {
-      username: "",
+      email: "",
       password: "",
-      message: "",
+      message: ""
     };
   },
   methods: {
     async login() {
-      const firebaseAuth = getAuth(firebaseApp);
-      const usersRef = collection(db, "users");
-      const docRef = doc(usersRef, this.username);
-      const docSnap = await getDoc(docRef);
-
-      if (!docSnap.exists()) {
-        this.message = "Username does not exist";
-        return;
-      }
-
-      const email = `${this.username}@yourdomain.com`;
-
       try {
-        await signInWithEmailAndPassword(firebaseAuth, email, this.password);
-        this.message = "User logged in successfully!";
-        localStorage.setItem("user", JSON.stringify({ user: this.username }));
-        this.$router.push("/");
+        const response = await axios_instance.post("/login", {
+          email: this.email,
+          password: this.password,
+        });
+        localStorage.setItem("token", response.data.token);
+        this.$router.push({ name: "Home" });
       } catch (error) {
-        this.message = "Log in error: " + error.message;
+        this.message = "Login failed. Please check your credentials.";
+        console.error(error);
       }
     },
   },

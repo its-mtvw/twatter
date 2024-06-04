@@ -15,8 +15,8 @@
               <img
                 src="https://ichef.bbci.co.uk/news/480/cpsprodpb/7614/production/_105482203__105172250_gettyimages-857294664.jpg.webp"
               />
-            </q-avatar> </template
-          >>
+            </q-avatar>
+          </template>
         </q-input>
       </div>
       <div class="col col-shrink">
@@ -31,6 +31,7 @@
         ></q-btn>
       </div>
     </div>
+
     <div v-for="user in users" :key="user.id">
       <p>{{ user.username }}</p>
       <q-btn
@@ -46,13 +47,13 @@
     </div>
 
     <q-separator size="10px" color="grey-2" />
-    <q-list seperator>
+    <q-list separator>
       <transition-group
         appear
         enter-active-class="animated fadeIn slow"
         leave-active-class="animated fadeOut slow"
       >
-        <q-item class="twatt q-py-md" v-for="twatt in twatts" :key="twatt.date">
+        <q-item class="twatt q-py-md" v-for="twatt in tweets" :key="twatt.id">
           <q-item-section avatar top>
             <q-avatar size="xl">
               <img
@@ -63,7 +64,7 @@
 
           <q-item-section>
             <q-item-label class="text-subtitle1">
-              <strong>@{{ twatt.user }}</strong>
+              <strong>@{{ twatt.user_id }}</strong>
             </q-item-label>
             <q-item-label class="twatt-content text-body1">
               {{ twatt.content }}
@@ -85,9 +86,7 @@
                 flat
                 round
               />
-              <span>{{
-                Array.isArray(twatt.likes) ? twatt.likes.length : 0
-              }}</span>
+              <span>{{ twatt.likes ? twatt.likes.length : 0 }}</span>
               <q-btn
                 @click="deleteTwatt(twatt)"
                 color="primary"
@@ -100,7 +99,7 @@
           </q-item-section>
 
           <q-item-section side top>
-            {{ relativeDate(twatt.date) }}
+            {{ relativeDate(twatt.createdAt) }}
           </q-item-section>
         </q-item>
       </transition-group>
@@ -108,216 +107,110 @@
   </q-page>
 </template>
 
-<script setup>
-import { ref, onMounted } from "vue";
-import {
-  query,
-  collection,
-  doc,
-  addDoc,
-  deleteDoc,
-  updateDoc,
-  getDoc,
-  getDocs,
-  onSnapshot,
-  orderBy,
-  arrayUnion,
-  arrayRemove,
-  setDoc,
-  serverTimestamp,
-} from "firebase/firestore";
-import { db } from "boot/firebase";
-import { formatDistanceToNow } from "date-fns";
-import { useQuasar } from "quasar";
-
-const $q = useQuasar();
-const currentUser = ref(JSON.parse(localStorage.getItem("user")) ?? null);
-const username = ref(currentUser.value?.user ?? "defaultUsername");
-const newTwattContent = ref("");
-const twatts = ref([]);
-const users = ref([]);
-const following = ref([]); // To keep track of followed users
-
-const relativeDate = (value) => {
-  return formatDistanceToNow(value, { addSuffix: true });
-};
-
-const addNewTwatt = async () => {
-  if (!currentUser.value || !currentUser.value.user) {
-    $q.notify({
-      type: "negative",
-      message: "You need to be logged in to twatt",
-    });
-    return;
-  }
-  let newTwatt = {
-    content: newTwattContent.value,
-    date: Date.now(),
-    user: currentUser.value.user, // store the username of the user who posted the tweet
-    likes: [],
-  };
-  const twattsCollection = collection(db, "twatts");
-  await addDoc(twattsCollection, newTwatt);
-  newTwattContent.value = ""; // clear the input after adding the new twatt
-};
-
-const deleteTwatt = async (twatt) => {
-  if (twatt.user === currentUser.value.user) {
-    try {
-      const twattDoc = doc(db, "twatts", twatt.id);
-      await deleteDoc(twattDoc);
-      // Remove the deleted twatt from your local state
-      twatts.value = twatts.value.filter((t) => t.id !== twatt.id);
-    } catch (error) {
-      console.error("Error deleting twatt:", error);
-    }
-  } else {
-    $q.notify({
-      type: "negative",
-      message: "You can only delete your own twatts",
-    });
-  }
-};
-
-const likeTwatt = async (twatt) => {
-  const twattDoc = doc(db, "twatts", twatt.id);
-  if (Array.isArray(twatt.likes)) {
-    if (twatt.likes.includes(username.value)) {
-      // If the user has already liked the twatt, remove their like
-      await updateDoc(twattDoc, { likes: arrayRemove(username.value) });
-    } else {
-      // If the user hasn't liked the twatt yet, add their like
-      await updateDoc(twattDoc, { likes: arrayUnion(username.value) });
-    }
-    // Fetch the updated twatt document from the Firestore database
-    const updatedTwatt = await getDoc(twattDoc);
-    // Update the twatt.likes array in your local state
-    twatt.likes = updatedTwatt.data().likes;
-  }
-};
-
-const fetchUsers = async () => {
-  const usersCollection = collection(db, "users");
-  const usersSnapshot = await getDocs(usersCollection);
-  users.value = usersSnapshot.docs.map((doc) => ({
-    id: doc.id,
-    username: doc.data().user, // Assuming 'username' field contains UID
-  }));
-};
-
-const fetchFollowing = async () => {
-  if (!currentUser.value.user || !currentUser.value.uid) {
-    console.error("No current user or UID found.");
-    return;
-  }
-
-  try {
-    const followingCollection = collection(
-      db,
-      "following",
-      currentUser.value.uid,
-      "following"
-    );
-    const followingSnapshot = await getDocs(followingCollection);
-    following.value = followingSnapshot.docs.map((doc) => doc.data().userId);
-  } catch (error) {
-    console.error("Error fetching following data: ", error);
-  }
-};
-
-const isFollowing = (user) => {
-  return following.value.includes(user.id);
-};
-
-const toggleFollow = async (user) => {
-  if (isFollowing(user)) {
-    await unfollowUser(user);
-  } else {
-    await followUser(user);
-  }
-};
-
-const followUser = async (user) => {
-  if (!currentUser.value || !currentUser.value.uid) {
-    $q.notify({
-      type: "negative",
-      message: "You need to be logged in to follow users",
-    });
-    return;
-  }
-
-  try {
-    const followerDocRef = doc(
-      collection(db, "followers", user.id, "followers"),
-      currentUser.value.uid
-    );
-    const followingDocRef = doc(
-      collection(db, "following", currentUser.value.uid, "following"),
-      user.id
-    );
-
-    await setDoc(followerDocRef, {
-      userId: currentUser.value.uid,
-      followedAt: serverTimestamp(),
-    });
-
-    await setDoc(followingDocRef, {
-      userId: user.id,
-      followedAt: serverTimestamp(),
-    });
-
-    following.value.push(user.id);
-  } catch (error) {
-    console.error("Error following user: ", error);
-  }
-};
-
-const unfollowUser = async (user) => {
-  if (!currentUser.value || !currentUser.value.uid) {
-    $q.notify({
-      type: "negative",
-      message: "You need to be logged in to unfollow users",
-    });
-    return;
-  }
-
-  try {
-    const followerDocRef = doc(
-      collection(db, "followers", user.id, "followers"),
-      currentUser.value.uid
-    );
-    const followingDocRef = doc(
-      collection(db, "following", currentUser.value.uid, "following"),
-      user.id
-    );
-
-    await deleteDoc(followerDocRef);
-    await deleteDoc(followingDocRef);
-
-    following.value = following.value.filter((id) => id !== user.id);
-  } catch (error) {
-    console.error("Error unfollowing user: ", error);
-  }
-};
-
-onMounted(() => {
-  const twattsCollection = collection(db, "twatts");
-  const orderedQuery = query(twattsCollection, orderBy("date", "desc"));
-  onSnapshot(orderedQuery, (snapshot) => {
-    twatts.value = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-      likes: doc.data().likes,
-    }));
-  });
-
-  if (currentUser.value) {
-    fetchUsers();
-    fetchFollowing();
-  } else {
-    console.error("No current user found.");
-  }
+<script>
+import axios from "axios";
+const instance = axios.create({
+  baseURL: "http://localhost:3000",
 });
+
+export default {
+  data() {
+    return {
+      id: "",
+      email: "",
+      password: "",
+      tweets: [],
+      newTwattContent: ""
+    };
+  },
+  created() {
+    this.verifyAccess();
+  },
+  methods: {
+  async verifyAccess() {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        this.$router.push({ name: "Login" });
+        return;
+      }
+      const response = await instance.get("/tweets", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      this.tweets = response.data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    } catch (err) {
+      console.error(err);
+    }
+  },
+  async addNewTwatt() {
+  try {
+    const token = localStorage.getItem("token");
+    const defaultImage = "https://example.com/default-image.jpg";
+    const user_id ="2" // replace with your default image URL
+    const response = await instance.post(
+      "/tweets",
+      { 
+        content: this.newTwattContent,
+        img: defaultImage,
+        user_id: user_id // replace this.userId with the actual user id
+      },
+      {
+        headers: { Authorization: `Bearer ${token}` }
+      }
+    );
+    this.tweets.unshift(response.data);
+    this.newTwattContent = "";
+  } catch (error) {
+    console.error(error);
+  }
+},
+  async deleteTwatt(twatt) {
+  try {
+    const token = localStorage.getItem("token");
+    const response = await instance.delete(`/tweets/${twatt.tweet_id}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    // Check if the deletion was successful before updating the state
+    if (response.status === 200) {
+      // Remove the deleted tweet from the local data
+      this.tweets = this.tweets.filter(t => t.tweet_id !== twatt.tweet_id);
+      // Refresh the tweets data from the server
+      await this.verifyAccess();
+    } else {
+      console.error('Failed to delete tweet:', response.statusText);
+    }
+  } catch (error) {
+    console.error('Error deleting tweet:', error);
+  }
+},
+
+
+  likeTwatt(twatt) {
+    // Implement liking functionality here
+  },
+  relativeDate(date) {
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - new Date(date)) / 1000);
+
+    if (diffInSeconds < 60) {
+      return `${diffInSeconds} seconds ago`;
+    }
+
+    const diffInMinutes = Math.floor(diffInSeconds / 60);
+    if (diffInMinutes < 60) {
+      return `${diffInMinutes} minutes ago`;
+    }
+
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) {
+      return `${diffInHours} hours ago`;
+    }
+
+    return new Date(date).toLocaleDateString();
+  }
+}
+
+};
 </script>
 
 <style>

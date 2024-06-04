@@ -13,8 +13,8 @@
         clearable
         filled
         color="blue-6"
-        v-model="username"
-        label="UserName"
+        v-model="email"
+        label="Email"
         style="width: 400px"
       />
       <q-input
@@ -33,46 +33,33 @@
   </div>
 </template>
 <script>
-import { getAuth } from "firebase/auth";
-import { firebaseApp, db } from "boot/firebase";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { collection, doc, setDoc, getDoc } from "firebase/firestore";
-
+import axios from "axios";
+import { route } from "quasar/wrappers";
+const axios_instance = axios.create({
+  baseURL: "http://localhost:3000",
+});
 export default {
   data() {
     return {
-      username: "",
+      email: "",
       password: "",
       message: "",
     };
   },
   methods: {
     async signUp() {
-      const firebaseAuth = getAuth(firebaseApp);
-      const usersRef = collection(db, "users");
-      const docRef = doc(usersRef, this.username);
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        this.message = "Username already exists";
-        return;
-      }
-
-      const email = `${this.username}@yourdomain.com`;
-
       try {
-        const userCredential = await createUserWithEmailAndPassword(
-          firebaseAuth,
-          email,
-          this.password
-        );
-
-        await setDoc(docRef, { uid: userCredential.user.uid });
-
-        this.message = "User signed up successfully!";
-      } catch (error) {
-        this.message = "Sign up error: " + error.message;
-      }
+        axios_instance
+          .post("/signup", {
+            email: this.email,
+            password: this.password,
+          })
+          .then((response) => {
+            localStorage.setItem("token", response.data.token);
+            console.log(JSON.stringify(response));
+            this.message = "User created successfully";
+          });
+      } catch (error) {}
     },
   },
 };
